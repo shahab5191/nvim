@@ -1,0 +1,8 @@
+# Local backups made before edits
+*.bak
+*.bak-*
+
+# nvim runtime state, should it ever land in the config dir
+/session/
+/shada/
+/spell/

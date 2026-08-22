@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Godot "external editor" -> Neovim bridge.
+#
+# Set up once per machine, in Godot: Editor > Editor Settings > Text Editor > External
+#   Use External Editor : on
+#   Exec Path           : $HOME/.local/bin/godot-nvim-open   (absolute; run bootstrap.sh first)
+#   Exec Flags          : {project} {file} {line} {col}
+#
+# Godot passes {line} 0-based, hence LINE_OFFSET. Flip to 0 if jumps land a line late.
+set -euo pipefail
+
+LINE_OFFSET=1
+
+project="${1:-}"
+file="${2:-}"
+line="${3:-0}"
+col="${4:-0}"
+
+[[ -n "$file" ]] || exit 0
+
+# Record the raw arguments Godot passed (last invocation only). Godot's {line}
+# base has changed across versions; this is how you check yours -- compare the
+# logged line against where you actually clicked.
+log="${XDG_STATE_HOME:-$HOME/.local/state}/godot-nvim-open.log"
+mkdir -p "$(dirname "$log")" 2>/dev/null || true
+printf 'project=%s file=%s line=%s col=%s (LINE_OFFSET=%s)\n' \
+  "$project" "$file" "$line" "$col" "$LINE_OFFSET" >"$log" 2>/dev/null || true
+
+[[ "$line" =~ ^[0-9]+$ ]] || line=0
+[[ "$col"  =~ ^[0-9]+$ ]] || col=0
+line=$(( line + LINE_OFFSET ))
+(( line > 0 )) || line=1
+(( col  > 0 )) || col=1
+
+pipe="$project/server.pipe"
+
+# Existing session: jump in place. <C-\><C-N> forces normal mode first, in case the
+# session is sitting in insert mode or a terminal buffer.
+if [[ -S "$pipe" ]] && nvim --server "$pipe" --remote-expr 1 >/dev/null 2>&1; then
+  exec nvim --server "$pipe" --remote-send \
+    "<C-\\><C-N>:edit ${file}<CR>:call cursor(${line},${col})<CR>zz"
+fi
+
+# Nothing listening: open a fresh editor in whichever terminal this machine has.
+# $TERMINAL first so it stays overridable.
+for term in "${TERMINAL:-}" ghostty kitty alacritty wezterm foot gnome-terminal konsole xterm; do
+  [[ -n "$term" ]] || continue
+  command -v "$term" >/dev/null 2>&1 || continue
+  case "$term" in
+    gnome-terminal) exec "$term" -- nvim "+call cursor(${line},${col})" "$file" ;;
+    konsole)        exec "$term" -e nvim "+call cursor(${line},${col})" "$file" ;;
+    *)              exec "$term" -e nvim "+call cursor(${line},${col})" "$file" ;;
+  esac
+done
+
+echo "godot-nvim-open: no terminal emulator found; set \$TERMINAL" >&2
+exit 1
