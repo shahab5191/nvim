@@ -985,6 +985,10 @@ require("lazy").setup({
 				},
 				pyright = {},
 				rust_analyzer = {},
+				-- GLSL. Note Godot's RenderingDevice shaders start with a
+				-- `#[compute]` directive that Godot strips before compiling; it is
+				-- not valid GLSL, so expect one diagnostic on that line.
+				glsl_analyzer = {},
 				-- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
 				--
 				-- Some languages (like typescript) have entire language plugins that can be useful:
@@ -1650,6 +1654,7 @@ require("lazy").setup({
 				"gdscript",
 				"gdshader",
 				"godot_resource",
+				"glsl",
 			}
 			require("nvim-treesitter").install(langs)
 			-- Parser names and filetypes mostly match, except Godot's .tres/.tscn
@@ -1781,6 +1786,10 @@ end
 -- Godot / GDScript workflow (<leader>G*)
 -- ============================================================================
 do
+	-- nvim detects .gdshader but not .gdshaderinc, so shader include files end up
+	-- with no filetype at all: no highlighting, no LSP. Map them onto gdshader.
+	vim.filetype.add({ extension = { gdshaderinc = "gdshader" } })
+
 	-- Resolve the Godot binary per machine instead of pinning one path+version:
 	-- $GODOT wins, then anything on PATH, then the highest-versioned official
 	-- tarball under ~/Programs/Godot.
