@@ -277,7 +277,6 @@ require("lazy").setup({
   --     "stevearc/dressing.nvim", -- for input provider dressing
   --     "folke/snacks.nvim", -- for input provider snacks
   --     "nvim-tree/nvim-web-devicons", -- or echasnovski/mini.icons
-  --     "zbirenbaum/copilot.lua", -- for providers='copilot'
   --     {
   --       -- support for image pasting
   --       "HakonHarnes/img-clip.nvim",
@@ -313,7 +312,48 @@ require("lazy").setup({
       require("toggleterm").setup{}
     end
   },
-	{ "github/copilot.vim" },
+	{ -- AI inline completion (Windsurf/Codeium backend, free tier). Run `:NeoCodeium auth` once.
+		"monkoose/neocodeium",
+		event = "InsertEnter",
+		cmd = "NeoCodeium", -- so `:NeoCodeium auth` works before entering insert mode
+		config = function()
+			local neocodeium = require("neocodeium")
+			local has_cmp, cmp = pcall(require, "cmp")
+
+			neocodeium.setup({
+				-- Don't render ghost text while the nvim-cmp menu is open.
+				filter = function()
+					return not (has_cmp and cmp.visible())
+				end,
+			})
+
+			-- Clear a pending suggestion when the cmp menu appears.
+			if has_cmp then
+				cmp.event:on("menu_opened", function()
+					neocodeium.clear()
+				end)
+			end
+
+			-- <Tab> accepts the suggestion, otherwise inserts a literal tab.
+			vim.keymap.set("i", "<Tab>", function()
+				if neocodeium.visible() then
+					neocodeium.accept()
+				else
+					vim.api.nvim_feedkeys(vim.keycode("<Tab>"), "n", false)
+				end
+			end, { desc = "Accept AI suggestion or insert tab" })
+
+			vim.keymap.set("i", "<A-w>", neocodeium.accept_word, { desc = "Accept AI suggestion word" })
+			vim.keymap.set("i", "<A-a>", neocodeium.accept_line, { desc = "Accept AI suggestion line" })
+			vim.keymap.set("i", "<A-]>", function()
+				neocodeium.cycle_or_complete()
+			end, { desc = "Next AI suggestion" })
+			vim.keymap.set("i", "<A-[>", function()
+				neocodeium.cycle_or_complete(-1)
+			end, { desc = "Previous AI suggestion" })
+			vim.keymap.set("i", "<A-c>", neocodeium.clear, { desc = "Clear AI suggestion" })
+		end,
+	},
 	{ -- Adds git related signs to the gutter, as well as utilities for managing changes
 		"lewis6991/gitsigns.nvim",
 		opts = {
@@ -445,6 +485,74 @@ require("lazy").setup({
 	},
 	{ "m4xshen/autoclose.nvim" },
 	{ "windwp/nvim-autopairs" },
+	{ -- Multiple cursors that behave like real cursors (insert/visual modes, undo, macros)
+		"jake-stewart/multicursor.nvim",
+		branch = "1.0",
+		event = "VeryLazy",
+		config = function()
+			local mc = require("multicursor-nvim")
+			mc.setup()
+
+			local set = vim.keymap.set
+			local nx = { "n", "x" }
+
+			-- Core, VSCode-flavoured bindings.
+			-- NOTE: <C-d> is taken by neoscroll, so "add cursor at next match" is <C-n>.
+			set(nx, "<C-n>", function() mc.matchAddCursor(1) end, { desc = "Multicursor: add at next match" })
+			set(nx, "<C-Up>", function() mc.lineAddCursor(-1) end, { desc = "Multicursor: add cursor above" })
+			set(nx, "<C-Down>", function() mc.lineAddCursor(1) end, { desc = "Multicursor: add cursor below" })
+			set(nx, "<C-q>", mc.toggleCursor, { desc = "Multicursor: disable/enable cursors" })
+
+			-- Add and remove cursors with ctrl + left click.
+			set("n", "<C-LeftMouse>", mc.handleMouse, { desc = "Multicursor: toggle cursor at mouse" })
+			set("n", "<C-LeftDrag>", mc.handleMouseDrag, { desc = "Multicursor: drag cursors" })
+			set("n", "<C-LeftRelease>", mc.handleMouseRelease, { desc = "Multicursor: release cursors" })
+
+			-- Everything else lives under <leader>m to stay out of the way.
+			set(nx, "<leader>mn", function() mc.matchAddCursor(1) end, { desc = "Add cursor at [n]ext match" })
+			set(nx, "<leader>mN", function() mc.matchAddCursor(-1) end, { desc = "Add cursor at previous match" })
+			set(nx, "<leader>ms", function() mc.matchSkipCursor(1) end, { desc = "[S]kip next match" })
+			set(nx, "<leader>mS", function() mc.matchSkipCursor(-1) end, { desc = "Skip previous match" })
+			set(nx, "<leader>ma", mc.matchAllAddCursors, { desc = "Add cursor to [a]ll matches in buffer" })
+			set(nx, "<leader>mj", function() mc.lineAddCursor(1) end, { desc = "Add cursor below" })
+			set(nx, "<leader>mk", function() mc.lineAddCursor(-1) end, { desc = "Add cursor above" })
+			set(nx, "<leader>mJ", function() mc.lineSkipCursor(1) end, { desc = "Skip line below" })
+			set(nx, "<leader>mK", function() mc.lineSkipCursor(-1) end, { desc = "Skip line above" })
+			set(nx, "<leader>mo", mc.addCursorOperator, { desc = "Add cursor per line of m[o]tion (e.g. mmip)" })
+			set(nx, "<leader>m=", mc.alignCursors, { desc = "Align cursor columns" })
+			set(nx, "<leader>mq", mc.duplicateCursors, { desc = "Duplicate cursors, disable originals" })
+			set("n", "<leader>mr", mc.restoreCursors, { desc = "[R]estore last cleared cursors" })
+			set("n", "<leader>m/", mc.searchAllAddCursors, { desc = "Add cursor to every search result" })
+			set("x", "<leader>mv", mc.splitCursors, { desc = "Split selection by regex" })
+			set("x", "<leader>mm", mc.matchCursors, { desc = "[M]atch cursors in selection by regex" })
+			set("x", "<leader>mt", function() mc.transposeCursors(1) end, { desc = "[T]ranspose selections forward" })
+			set("x", "<leader>mT", function() mc.transposeCursors(-1) end, { desc = "Transpose selections backward" })
+
+			-- Layer mappings only apply while multiple cursors exist, so they can
+			-- safely shadow existing keys (like <Esc> for :nohlsearch).
+			mc.addKeymapLayer(function(layerSet)
+				layerSet(nx, "<Left>", mc.prevCursor, { desc = "Multicursor: previous cursor" })
+				layerSet(nx, "<Right>", mc.nextCursor, { desc = "Multicursor: next cursor" })
+				layerSet(nx, "<leader>mx", mc.deleteCursor, { desc = "Delete main cursor" })
+				layerSet("n", "<Esc>", function()
+					if not mc.cursorsEnabled() then
+						mc.enableCursors()
+					else
+						mc.clearCursors()
+					end
+				end, { desc = "Multicursor: enable/collapse cursors" })
+			end)
+
+			local hl = vim.api.nvim_set_hl
+			hl(0, "MultiCursorCursor", { reverse = true })
+			hl(0, "MultiCursorVisual", { link = "Visual" })
+			hl(0, "MultiCursorSign", { link = "SignColumn" })
+			hl(0, "MultiCursorMatchPreview", { link = "Search" })
+			hl(0, "MultiCursorDisabledCursor", { reverse = true })
+			hl(0, "MultiCursorDisabledVisual", { link = "Visual" })
+			hl(0, "MultiCursorDisabledSign", { link = "SignColumn" })
+		end,
+	},
 	{
 		"stevearc/oil.nvim",
 		opts = {},
@@ -519,6 +627,7 @@ require("lazy").setup({
 				{ "<leader>w", group = "[W]orkspace" },
 				{ "<leader>t", group = "[T]oggle" },
 				{ "<leader>h", group = "Git [H]unk", mode = { "n", "v" } },
+				{ "<leader>m", group = "[M]ulticursor", mode = { "n", "x" } },
 			},
 		},
 	},
