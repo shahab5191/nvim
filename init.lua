@@ -410,6 +410,10 @@ require("lazy").setup({
 	{ "hrsh7th/cmp-nvim-lsp-signature-help" },
 	{ "mfussenegger/nvim-dap" },
 	{ "mfussenegger/nvim-dap-python" },
+	{ -- Go debugger: registers the delve adapter + Go debug/test configurations
+		"leoluz/nvim-dap-go",
+		dependencies = { "mfussenegger/nvim-dap" },
+	},
   {
     'xemptuous/sqlua.nvim',
     lazy = true,
@@ -683,6 +687,7 @@ require("lazy").setup({
 				console = "externalTerminal",
 				-- ... more options, see https://github.com/microsoft/debugpy/wiki/Debug-configuration-settings
 			})
+			require("dap-go").setup()
 			local dapui = require("dapui")
       dapui.setup()
 
@@ -799,6 +804,8 @@ require("lazy").setup({
 				{ noremap = true, silent = true }
 			)
 			vim.keymap.set("n", "<leader>dt", '<cmd>lua require("dapui").toggle()<CR>', { silent = true })
+			vim.keymap.set("n", "<leader>dgt", function() require("dap-go").debug_test() end, { desc = "Debug nearest Go test" })
+			vim.keymap.set("n", "<leader>dgl", function() require("dap-go").debug_last_test() end, { desc = "Debug last Go test" })
 
 			require("oil").setup()
 			vim.keymap.set("n", "-", "<CMD>Oil<CR>", { desc = "Open parent directory" })
